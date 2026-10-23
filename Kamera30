@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fördröjd Mobilkamera</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            touch-action: none; /* Förhindrar zoom och scroll på mobil */
+            font-family: sans-serif;
+        }
+
+        #liveVideo {
+            display: none;
+        }
+
+        #delayCanvas {
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover; 
+            display: block;
+        }
+
+        /* Startskärm för mobila webbläsare */
+        #overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.2rem;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">Tryck på skärmen för att starta kameran</div>
+    <video id="liveVideo" autoplay playsinline muted></video>
+    <canvas id="delayCanvas"></canvas>
+
+    <script>
+        const video = document.getElementById('liveVideo');
+        const canvas = document.getElementById('delayCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        
+        const DELAY_MS = 5000; 
+        let buffer = [];
+        let isRunning = false;
+
+        // Starta vid tryck (krävs för iOS/Android-autouppspelning)
+        window.addEventListener('click', startCamera);
+        window.addEventListener('touchstart', startCamera);
+
+        function startCamera() {
+            if (isRunning) return;
+            isRunning = true;
+            overlay.style.display = 'none';
+
+            // Mobilanpassade inställningar: 
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, 
+                audio: false 
+            })
+            .then(stream => {
+                video.srcObject = stream;
+                // Tvinga igång uppspelning explicit för mobila enheter
+                video.play();
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Kunde inte starta kameran. Kontrollera behörigheterna.");
+            });
+        }
+
+        video.addEventListener('loadedmetadata', () => {
+            resizeCanvas();
+            requestAnimationFrame(renderLoop);
+        });
+
+        // Uppdatera canvas-storlek om mobilen roteras
+        window.addEventListener('resize', resizeCanvas);
+        function resizeCanvas() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
+
+        function renderLoop() {
+            const now = Date.now();
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                buffer.push({
+                    timestamp: now,
+                    image: tempCanvas
+                });
+            }
+
+            if (buffer.length > 0 && (now - buffer[0].timestamp) >= DELAY_MS) {
+                const frameToRender = buffer.shift();
+                ctx.drawImage(frameToRender.image, 0, 0);
+            }
+
+            requestAnimationFrame(renderLoop);
+        }
+    </script>
+</body>
+</html>
